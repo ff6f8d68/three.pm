@@ -38,7 +38,7 @@
             return {
                 id: 'threepm',
                 name: 'Three.pm',
-                color1: '#333333',
+                color1: '#6b47fd',
                 color2: '#333333',
                 blocks: [
                     {
