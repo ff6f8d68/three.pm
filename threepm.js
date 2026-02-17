@@ -39,7 +39,9 @@
                 id: 'threepm',
                 name: 'Three.pm',
                 color1: '#6b47fd',
-                color2: '#333333',
+                color2: '#6b47fd',
+                menuIconURI: 'https://github.com/ff6f8d68/three.pm/blob/main/three-js-removebg-preview.png?raw=true',
+                blockIconURI: 'https://github.com/ff6f8d68/three.pm/blob/main/three-js-removebg-preview.png?raw=true',
                 blocks: [
                     {
                         opcode: 'loadThree',
@@ -200,10 +202,11 @@
                     {
                         opcode: 'addBody',
                         blockType: Scratch.BlockType.COMMAND,
-                        text: 'Add Physics Body [ID] Shape [SHAPE] Mass [MASS] Bind to [MESH_ID]',
+                        text: 'Add Physics Body [ID] Shape [SHAPE] Static: [STATIC] Mass: [MASS] Bind to: [MESH_ID]',
                         arguments: {
                             ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'phys1' },
                             SHAPE: { type: Scratch.ArgumentType.STRING, menu: 'physShapes', defaultValue: 'Box' },
+                            STATIC: { type: Scratch.ArgumentType.BOOLEAN, defaultValue: false },
                             MASS: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 },
                             MESH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'cube1' }
                         }
@@ -341,17 +344,23 @@
             }
         }
 
-        addBody({ ID, SHAPE, MASS, MESH_ID }) {
+        addBody({ ID, SHAPE, STATIC, MASS, MESH_ID }) {
             if (!world || !physicsEnabled) return;
             
-            // 1. Find the Mesh to bind to
+            // 1. Determine Mass (Static overrides mass input)
+            let mass = Number(MASS);
+            if (STATIC) {
+                mass = 0; // Static objects have 0 mass
+            }
+
+            // 2. Find the Mesh to bind to
             const mesh = objects[MESH_ID];
             if (!mesh) {
                 console.warn(`Three.pm: Cannot bind physics body [${ID}] to missing mesh [${MESH_ID}]`);
                 return;
             }
 
-            // 2. Auto-Generate Collision from the specific Mesh
+            // 3. Auto-Generate Collision from the specific Mesh
             mesh.updateMatrixWorld();
             
             const box = new THREE.Box3().setFromObject(mesh);
@@ -379,28 +388,26 @@
             }
 
             const body = new CANNON.Body({
-                mass: Number(MASS) 
+                mass: mass 
             });
             
             body.addShape(shape);
 
-            // 3. Set Initial Position based on the Mesh
+            // 4. Set Initial Position based on the Mesh
             if (SHAPE === 'Plane') {
                 body.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
                 body.position.set(center.x, center.y, center.z);
             } else {
                 body.position.set(center.x, center.y, center.z);
-                if (MASS > 0) {
+                if (mass > 0) {
                     body.quaternion.set(mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w);
                 }
             }
 
             world.addBody(body);
             
-            // 4. Create the Binding
-            // We store the body under ID (for velocity control)
+            // 5. Create the Binding
             physicsBodies[ID] = body;
-            // We store the MESH_ID under ID (for visual update)
             physicsMeshMap[ID] = mesh;
         }
 
