@@ -19,7 +19,7 @@
     // Flare Globals
     const lightFlares = [];
 
-    // Camera Attachment Globals (Fixes rendering issue when attached to camera)
+    // Camera Attachment Globals
     const cameraAttachments = [];
 
     const loadScript = (url) => {
@@ -380,6 +380,10 @@
             renderer.setSize(width, height, false);
             if (!TRANS) renderer.setClearColor(COLOR, 1);
 
+            // FIX: Ensure correct color space rendering
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.physicallyCorrectLights = true;
+
             const ro = new ResizeObserver(() => {
                 const w = runtime.renderer.canvas.clientWidth;
                 const h = runtime.renderer.canvas.clientHeight;
@@ -400,30 +404,18 @@
             const parent = objects[PARENT];
             if (!child || !parent) return;
 
-            // 1. Remove physics body if it exists (Parenting overrides independent physics)
             if (physicsBodies[CHILD]) {
                 world.removeBody(physicsBodies[CHILD]);
                 delete physicsBodies[CHILD];
                 delete physicsMeshMap[CHILD];
             }
 
-            // 2. Check if attaching to Camera (Special Case for Rendering)
             if (parent === camera) {
-                // Remove from standard scene graph parenting
                 if (child.parent) child.parent.remove(child);
-                // Add to scene so it renders, but we will manually control its position
                 scene.add(child);
-                
-                // Store in special camera attachments list
-                cameraAttachments.push({ 
-                    child: child, 
-                    dist: -Number(DIST) // Negative Z is forward
-                });
-                
-                // Set initial local rotation to face forward
+                cameraAttachments.push({ child: child, dist: -Number(DIST) });
                 child.rotation.set(0, 0, 0);
             } else {
-                // Standard Object Parenting
                 parent.add(child);
                 child.position.set(0, 0, -Number(DIST));
                 child.rotation.set(0, 0, 0);
@@ -434,27 +426,18 @@
         detachObject({ ID }) {
             const obj = objects[ID];
             if (!obj) return;
-
-            // Check if it's a camera attachment
             const attIndex = cameraAttachments.findIndex(e => e.child === obj);
-            
             if (attIndex !== -1) {
-                // Detaching from camera
                 cameraAttachments.splice(attIndex, 1);
-                // Object stays in scene (added in attachObject), so no need to re-add
             } else {
-                // Detaching from standard parent
                 if (obj.parent && obj.parent !== scene) {
                     const position = new THREE.Vector3();
                     const quaternion = new THREE.Quaternion();
                     const scale = new THREE.Vector3();
-                    
                     obj.getWorldPosition(position);
                     obj.getWorldQuaternion(quaternion);
                     obj.getWorldScale(scale);
-
                     scene.add(obj);
-
                     obj.position.copy(position);
                     obj.quaternion.copy(quaternion);
                     obj.scale.copy(scale);
@@ -468,7 +451,6 @@
         enablePhysics({ ENABLE }) {
             if (!window.CANNON) return;
             physicsEnabled = ENABLE;
-            
             if (physicsEnabled) {
                 if (!world) {
                     world = new CANNON.World();
@@ -480,9 +462,7 @@
         }
 
         setGravity({ X, Y, Z }) {
-            if (world && physicsEnabled) {
-                world.gravity.set(Number(X), Number(Y), Number(Z));
-            }
+            if (world && physicsEnabled) world.gravity.set(Number(X), Number(Y), Number(Z));
         }
 
         changeGravity({ X, Y, Z }) {
@@ -503,39 +483,27 @@
 
         addBody({ ID, STATIC, MASS, MESH_ID }) {
             if (!world || !physicsEnabled) return;
-            
             let mass = Number(MASS);
-            if (STATIC) {
-                mass = 0; 
-            }
-
+            if (STATIC) mass = 0;
             const mesh = objects[MESH_ID];
             if (!mesh) {
                 console.warn(`Three.pm: Cannot bind physics body [${ID}] to missing mesh [${MESH_ID}]`);
                 return;
             }
-
             mesh.updateMatrixWorld();
-            
             const box = new THREE.Box3().setFromObject(mesh);
             const size = new THREE.Vector3();
             box.getSize(size);
             const center = new THREE.Vector3();
             box.getCenter(center);
-
-            // AUTO GENERATE: Always use Box for collision stability and accuracy based on mesh size
             const halfExtents = new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2);
             const shape = new CANNON.Box(halfExtents);
-
             const body = new CANNON.Body({ mass: mass });
             body.addShape(shape);
-
             body.position.set(center.x, center.y, center.z);
-            
             if (mass > 0) {
                 body.quaternion.set(mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w);
             }
-
             world.addBody(body);
             physicsBodies[ID] = body;
             physicsMeshMap[ID] = mesh;
@@ -544,9 +512,7 @@
         setVelocity({ ID, X, Y, Z }) {
             if (!physicsEnabled) return;
             const body = physicsBodies[ID];
-            if (body) {
-                body.velocity.set(Number(X), Number(Y), Number(Z));
-            }
+            if (body) body.velocity.set(Number(X), Number(Y), Number(Z));
         }
 
         // --- END PHYSICS ---
@@ -554,21 +520,13 @@
         clearScene() {
             if (!scene) return;
             if (world) {
-                for (const id in physicsBodies) {
-                    world.removeBody(physicsBodies[id]);
-                }
+                for (const id in physicsBodies) world.removeBody(physicsBodies[id]);
                 for (const prop in physicsBodies) delete physicsBodies[prop];
                 for (const prop in physicsMeshMap) delete physicsMeshMap[prop];
             }
-
-            // Clear flares
             lightFlares.length = 0;
-            // Clear camera attachments
             cameraAttachments.length = 0;
-
-            while(scene.children.length > 0){ 
-                scene.remove(scene.children[0]); 
-            }
+            while(scene.children.length > 0){ scene.remove(scene.children[0]); }
         }
 
         setSkybox({ URL }) {
@@ -576,19 +534,15 @@
             const loader = new THREE.TextureLoader();
             loader.setCrossOrigin('anonymous'); 
             loader.load(URL, (texture) => {
+                texture.encoding = THREE.sRGBEncoding;
                 texture.mapping = THREE.EquirectangularReflectionMapping;
                 scene.background = texture;
                 scene.environment = texture;
-                if (renderer && scene && camera) {
-                    scene.updateMatrixWorld();
-                    renderer.render(scene, camera);
-                }
             });
         }
 
         quickShape({ ID, SHAPE, COLOR }) {
             if (!window.THREE) return;
-            
             let geo;
             switch (SHAPE) {
                 case 'BoxGeometry': geo = new THREE.BoxGeometry(1, 1, 1); break;
@@ -598,7 +552,6 @@
                 case 'CylinderGeometry': geo = new THREE.CylinderGeometry(1, 1, 1, 32); break;
                 default: geo = new THREE.BoxGeometry(1, 1, 1);
             }
-
             const materials = Array.from({length: SHAPE === 'BoxGeometry' ? 6 : 1}, () => 
                 new THREE.MeshStandardMaterial({ color: parseArg(COLOR) })
             );
@@ -608,27 +561,21 @@
         createLight({ ID, TYPE, COLOR, INT, FLARE }) {
             if (!window.THREE) return;
             const light = new THREE[TYPE](parseArg(COLOR), Number(INT));
-            
             if (FLARE && TYPE === 'PointLight') {
                 const textureLoader = new THREE.TextureLoader();
                 const textureFlare0 = textureLoader.load('https://threejs.org/examples/textures/lensflare/lensflare0.png');
                 const textureFlare3 = textureLoader.load('https://threejs.org/examples/textures/lensflare/lensflare3.png');
-
                 const lensflare = new THREE.Lensflare();
                 lensflare.frustumCulled = false; 
                 lensflare.renderOrder = 999;     
-                
                 lensflare.addElement(new THREE.LensflareElement(textureFlare0, 700, 0, light.color));
                 lensflare.addElement(new THREE.LensflareElement(textureFlare3, 60, 0.6));
                 lensflare.addElement(new THREE.LensflareElement(textureFlare3, 70, 0.7));
                 lensflare.addElement(new THREE.LensflareElement(textureFlare3, 120, 0.9));
                 lensflare.addElement(new THREE.LensflareElement(textureFlare3, 70, 1));
-
                 scene.add(lensflare);
-                
                 lightFlares.push({ light: light, flare: lensflare });
             }
-
             objects[ID] = light;
         }
 
@@ -636,15 +583,12 @@
             if (!window.THREE || !THREE.OBJLoader || !THREE.MTLLoader) return;
             const mtlLoader = new THREE.MTLLoader();
             mtlLoader.setCrossOrigin('anonymous');
-            
             const loadModel = (materials = null) => {
                 const objLoader = new THREE.OBJLoader();
                 if (materials) objLoader.setMaterials(materials);
                 objLoader.load(OBJ, (obj) => { 
                     objects[ID] = obj;
-                    if (scene) {
-                        scene.add(obj);
-                    }
+                    if (scene) scene.add(obj);
                 });
             };
             if (MTL) mtlLoader.load(MTL, (mat) => { mat.preload(); loadModel(mat); });
@@ -659,26 +603,110 @@
 
         _applyTexture(mat, type, url) {
             if (!mat) return;
+            
+            // Handle Empty URL (Clear)
+            if (!url || url.trim() === '') {
+                switch (type) {
+                    case 'Skin': mat.map = null; break;
+                    case 'Bumps': mat.normalMap = null; break;
+                    case 'Roughness': mat.roughnessMap = null; break;
+                    case 'Reflection': mat.envMap = null; break;
+                }
+                mat.needsUpdate = true;
+                return;
+            }
+
             const loader = new THREE.TextureLoader();
             loader.setCrossOrigin('anonymous');
-            const tex = url ? loader.load(url) : null;
-            switch (type) {
-                case 'Skin': mat.map = tex; if (url) mat.color.set(0xffffff); break;
-                case 'Bumps': mat.normalMap = tex; break;
-                case 'Roughness': mat.roughnessMap = tex; break;
-                case 'Reflection': if (tex) tex.mapping = THREE.EquirectangularReflectionMapping; mat.envMap = tex; break;
-            }
-            mat.needsUpdate = true;
+            
+            // FIX: Use (tex) argument from callback
+            loader.load(url, (tex) => {
+                console.log('Texture loaded:', url);
+                if (type === 'Skin' || type === 'Reflection') {
+                    tex.encoding = THREE.sRGBEncoding;
+                } else {
+                    tex.encoding = THREE.LinearEncoding;
+                }
+
+                switch (type) {
+                    case 'Skin': 
+                        mat.map = tex; 
+                        mat.color.set(0xffffff); 
+                        break;
+                    case 'Bumps': mat.normalMap = tex; break;
+                    case 'Roughness': mat.roughnessMap = tex; break;
+                    case 'Reflection': 
+                        tex.mapping = THREE.EquirectangularReflectionMapping; 
+                        mat.envMap = tex; 
+                        break;
+                }
+                mat.needsUpdate = true;
+            }, undefined, (err) => {
+                console.error('Texture Error:', err);
+            });
         }
 
         setTextureGlobal({ ID, TYPE, URL }) {
             const obj = objects[ID];
             if (!obj) return;
-            obj.traverse(node => {
-                if (node.isMesh) {
-                    const mats = Array.isArray(node.material) ? node.material : [node.material];
-                    mats.forEach(m => this._applyTexture(m, TYPE, URL));
+
+            // Handle Empty URL
+            if (!URL || URL.trim() === '') {
+                obj.traverse(node => {
+                    if (node.isMesh && node.material) {
+                        const mats = Array.isArray(node.material) ? node.material : [node.material];
+                        mats.forEach(m => {
+                            if(m) {
+                                switch (TYPE) {
+                                    case 'Skin': m.map = null; break;
+                                    case 'Bumps': m.normalMap = null; break;
+                                    case 'Roughness': m.roughnessMap = null; break;
+                                    case 'Reflection': m.envMap = null; break;
+                                }
+                                m.needsUpdate = true;
+                            }
+                        });
+                    }
+                });
+                return;
+            }
+
+            const loader = new THREE.TextureLoader();
+            loader.setCrossOrigin('anonymous');
+            
+            // FIX: Use (tex) argument from callback
+            loader.load(URL, (tex) => {
+                console.log('Global Texture loaded:', URL);
+
+                if (TYPE === 'Skin' || TYPE === 'Reflection') {
+                    tex.encoding = THREE.sRGBEncoding;
+                } else {
+                    tex.encoding = THREE.LinearEncoding;
                 }
+
+                obj.traverse(node => {
+                    if (node.isMesh && node.material) {
+                        const mats = Array.isArray(node.material) ? node.material : [node.material];
+                        mats.forEach(m => {
+                            if(!m) return;
+                            switch (TYPE) {
+                                case 'Skin': 
+                                    m.map = tex; 
+                                    m.color.set(0xffffff); 
+                                    break;
+                                case 'Bumps': m.normalMap = tex; break;
+                                case 'Roughness': m.roughnessMap = tex; break;
+                                case 'Reflection': 
+                                    tex.mapping = THREE.EquirectangularReflectionMapping; 
+                                    m.envMap = tex; 
+                                    break;
+                            }
+                            m.needsUpdate = true;
+                        });
+                    }
+                });
+            }, undefined, (err) => {
+                console.error('Global Texture Error:', err);
             });
         }
 
@@ -708,7 +736,6 @@
             if (ctx && ctx.target) {
                 let finalVal = parseArg(VAL);
                 if (PROP.includes('rotation')) finalVal = finalVal * (Math.PI / 180);
-                
                 if (ctx.target[ctx.key] && typeof ctx.target[ctx.key] === 'object' && ctx.target[ctx.key].isColor) {
                      ctx.target[ctx.key].set(finalVal);
                 } else {
@@ -744,7 +771,6 @@
         removeFromScene({ ID }) {
             if (scene && objects[ID]) {
                 scene.remove(objects[ID]);
-                // Remove associated flare
                 const flareIndex = lightFlares.findIndex(e => e.light === objects[ID]);
                 if (flareIndex !== -1) {
                     scene.remove(lightFlares[flareIndex].flare);
@@ -774,8 +800,6 @@
             objects['camera'].rotateZ(rad);
         }
 
-        // --- RELATIVE CAMERA MOVEMENT ---
-
         cameraMoveForward({ DIST }) {
             if (!objects['camera']) return;
             objects['camera'].translateZ(Number(DIST));
@@ -792,10 +816,8 @@
         }
 
         render() {
-            // AUTO-UPDATE PHYSICS LOGIC
             if (physicsEnabled && world) {
                 world.step(1 / 60);
-
                 for (const [id, body] of Object.entries(physicsBodies)) {
                     const mesh = physicsMeshMap[id]; 
                     if (mesh) {
@@ -805,7 +827,6 @@
                 }
             }
 
-            // SYNC FLARES
             for (const entry of lightFlares) {
                 if (entry.light && entry.flare) {
                     entry.flare.position.copy(entry.light.position);
@@ -814,16 +835,10 @@
                 }
             }
 
-            // SYNC CAMERA ATTACHMENTS (The Fix)
             if (camera && cameraAttachments.length > 0) {
                 for (const item of cameraAttachments) {
-                    // 1. Match camera rotation
                     item.child.quaternion.copy(camera.quaternion);
-                    
-                    // 2. Copy camera position
                     item.child.position.copy(camera.position);
-
-                    // 3. Move forward by distance relative to the new rotation
                     item.child.translateZ(item.dist); 
                 }
             }
