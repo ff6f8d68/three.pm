@@ -13,8 +13,14 @@
     // Physics Globals
     let world;
     let physicsEnabled = false;
-    const physicsBodies = {}; // Maps Body ID -> Cannon Body
-    const physicsMeshMap = {}; // Maps Body ID -> Three Mesh (The Visual)
+    const physicsBodies = {}; 
+    const physicsMeshMap = {}; 
+
+    // Flare Globals
+    const lightFlares = [];
+
+    // Camera Attachment Globals (Fixes rendering issue when attached to camera)
+    const cameraAttachments = [];
 
     const loadScript = (url) => {
         return new Promise((resolve, reject) => {
@@ -43,6 +49,11 @@
                 menuIconURI: 'https://github.com/ff6f8d68/three.pm/blob/main/three-js-removebg-preview.png?raw=true',
                 blockIconURI: 'https://github.com/ff6f8d68/three.pm/blob/main/three-js-removebg-preview.png?raw=true',
                 blocks: [
+                    // --- SETUP ---
+                    {
+                        blockType: Scratch.BlockType.LABEL,
+                        text: 'Setup',
+                    },
                     {
                         opcode: 'loadThree',
                         blockType: Scratch.BlockType.COMMAND,
@@ -68,7 +79,11 @@
                         text: 'Set Skybox (Panorama) URL: [URL]',
                         arguments: { URL: { type: Scratch.ArgumentType.STRING, defaultValue: '' } }
                     },
-                    '---',
+                    // --- OBJECTS ---
+                    {
+                        blockType: Scratch.BlockType.LABEL,
+                        text: 'Objects',
+                    },
                     {
                         opcode: 'quickShape',
                         blockType: Scratch.BlockType.COMMAND,
@@ -89,6 +104,11 @@
                             MTL: { type: Scratch.ArgumentType.STRING, defaultValue: '' }
                         }
                     },
+                    // --- LIGHTING & MATERIALS ---
+                    {
+                        blockType: Scratch.BlockType.LABEL,
+                        text: 'Lighting & Materials',
+                    },
                     {
                         opcode: 'createLight',
                         blockType: Scratch.BlockType.COMMAND,
@@ -101,7 +121,6 @@
                             FLARE: { type: Scratch.ArgumentType.BOOLEAN, defaultValue: true }
                         }
                     },
-                    '---',
                     {
                         opcode: 'setTextureGlobal',
                         blockType: Scratch.BlockType.COMMAND,
@@ -123,7 +142,11 @@
                             URL: { type: Scratch.ArgumentType.STRING, defaultValue: '' }
                         }
                     },
-                    '---',
+                    // --- SCENE MANAGEMENT ---
+                    {
+                        blockType: Scratch.BlockType.LABEL,
+                        text: 'Scene Management',
+                    },
                     {
                         opcode: 'lookAt',
                         blockType: Scratch.BlockType.COMMAND,
@@ -145,8 +168,34 @@
                         text: 'Remove [ID] from Scene',
                         arguments: { ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'cube1' } }
                     },
-                    '---',
+                    // --- ATTACHMENT ---
+                    {
+                        blockType: Scratch.BlockType.LABEL,
+                        text: 'Attachment',
+                    },
+                    {
+                        opcode: 'attachObject',
+                        blockType: Scratch.BlockType.COMMAND,
+                        text: 'Attach [CHILD] in front of [PARENT] dist [DIST]',
+                        arguments: {
+                            CHILD: { type: Scratch.ArgumentType.STRING, defaultValue: 'cube2' },
+                            PARENT: { type: Scratch.ArgumentType.STRING, defaultValue: 'cube1' },
+                            DIST: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 }
+                        }
+                    },
+                    {
+                        opcode: 'detachObject',
+                        blockType: Scratch.BlockType.COMMAND,
+                        text: 'Detach [ID] to Scene',
+                        arguments: {
+                            ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'cube2' }
+                        }
+                    },
                     // --- CAMERA CONTROLS ---
+                    {
+                        blockType: Scratch.BlockType.LABEL,
+                        text: 'Camera',
+                    },
                     {
                         opcode: 'cameraYaw',
                         blockType: Scratch.BlockType.COMMAND,
@@ -165,8 +214,6 @@
                         text: 'Camera Roll (Tilt) by [DEG]',
                         arguments: { DEG: { type: Scratch.ArgumentType.NUMBER, defaultValue: 10 } }
                     },
-                    '---',
-                    // --- RELATIVE MOVEMENT ---
                     {
                         opcode: 'cameraMoveForward',
                         blockType: Scratch.BlockType.COMMAND,
@@ -185,8 +232,11 @@
                         text: 'Camera Move Up/Down by [DIST]',
                         arguments: { DIST: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 } }
                     },
-                    '---',
                     // --- PHYSICS ---
+                    {
+                        blockType: Scratch.BlockType.LABEL,
+                        text: 'Physics',
+                    },
                     {
                         opcode: 'enablePhysics',
                         blockType: Scratch.BlockType.COMMAND,
@@ -196,16 +246,34 @@
                     {
                         opcode: 'setGravity',
                         blockType: Scratch.BlockType.COMMAND,
-                        text: 'Set Gravity Y [VAL]',
-                        arguments: { VAL: { type: Scratch.ArgumentType.NUMBER, defaultValue: -9.82 } }
+                        text: 'Set Gravity X [X] Y [Y] Z [Z]',
+                        arguments: {
+                            X: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
+                            Y: { type: Scratch.ArgumentType.NUMBER, defaultValue: -9.82 },
+                            Z: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }
+                        }
+                    },
+                    {
+                        opcode: 'changeGravity',
+                        blockType: Scratch.BlockType.COMMAND,
+                        text: 'Change Gravity X [X] Y [Y] Z [Z]',
+                        arguments: {
+                            X: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
+                            Y: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
+                            Z: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }
+                        }
+                    },
+                    {
+                        opcode: 'getGravity',
+                        blockType: Scratch.BlockType.REPORTER,
+                        text: 'Gravity',
                     },
                     {
                         opcode: 'addBody',
                         blockType: Scratch.BlockType.COMMAND,
-                        text: 'Add Physics Body [ID] Shape [SHAPE] Static: [STATIC] Mass: [MASS] Bind to: [MESH_ID]',
+                        text: 'Add Physics Body [ID] Static: [STATIC] Mass: [MASS] Bind to: [MESH_ID]',
                         arguments: {
                             ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'phys1' },
-                            SHAPE: { type: Scratch.ArgumentType.STRING, menu: 'physShapes', defaultValue: 'Box' },
                             STATIC: { type: Scratch.ArgumentType.BOOLEAN, defaultValue: false },
                             MASS: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 },
                             MESH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'cube1' }
@@ -222,7 +290,11 @@
                             Z: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }
                         }
                     },
-                    '---',
+                    // --- PROPERTIES ---
+                    {
+                        blockType: Scratch.BlockType.LABEL,
+                        text: 'Properties',
+                    },
                     {
                         opcode: 'setProperty',
                         blockType: Scratch.BlockType.COMMAND,
@@ -260,7 +332,6 @@
                 ],
                 menus: {
                     shapes: ['BoxGeometry', 'SphereGeometry', 'PlaneGeometry', 'TorusGeometry', 'CylinderGeometry'],
-                    physShapes: ['Box', 'Sphere', 'Plane'],
                     lightTypes: ['PointLight', 'SpotLight', 'DirectionalLight', 'HemisphereLight'],
                     texTypes: ['Skin', 'Bumps', 'Roughness', 'Reflection'],
                     properties: [
@@ -322,6 +393,76 @@
             objects['camera'] = camera;
         }
 
+        // --- PARENTING / ATTACHMENT ---
+
+        attachObject({ CHILD, PARENT, DIST }) {
+            const child = objects[CHILD];
+            const parent = objects[PARENT];
+            if (!child || !parent) return;
+
+            // 1. Remove physics body if it exists (Parenting overrides independent physics)
+            if (physicsBodies[CHILD]) {
+                world.removeBody(physicsBodies[CHILD]);
+                delete physicsBodies[CHILD];
+                delete physicsMeshMap[CHILD];
+            }
+
+            // 2. Check if attaching to Camera (Special Case for Rendering)
+            if (parent === camera) {
+                // Remove from standard scene graph parenting
+                if (child.parent) child.parent.remove(child);
+                // Add to scene so it renders, but we will manually control its position
+                scene.add(child);
+                
+                // Store in special camera attachments list
+                cameraAttachments.push({ 
+                    child: child, 
+                    dist: -Number(DIST) // Negative Z is forward
+                });
+                
+                // Set initial local rotation to face forward
+                child.rotation.set(0, 0, 0);
+            } else {
+                // Standard Object Parenting
+                parent.add(child);
+                child.position.set(0, 0, -Number(DIST));
+                child.rotation.set(0, 0, 0);
+                child.updateMatrix();
+            }
+        }
+
+        detachObject({ ID }) {
+            const obj = objects[ID];
+            if (!obj) return;
+
+            // Check if it's a camera attachment
+            const attIndex = cameraAttachments.findIndex(e => e.child === obj);
+            
+            if (attIndex !== -1) {
+                // Detaching from camera
+                cameraAttachments.splice(attIndex, 1);
+                // Object stays in scene (added in attachObject), so no need to re-add
+            } else {
+                // Detaching from standard parent
+                if (obj.parent && obj.parent !== scene) {
+                    const position = new THREE.Vector3();
+                    const quaternion = new THREE.Quaternion();
+                    const scale = new THREE.Vector3();
+                    
+                    obj.getWorldPosition(position);
+                    obj.getWorldQuaternion(quaternion);
+                    obj.getWorldScale(scale);
+
+                    scene.add(obj);
+
+                    obj.position.copy(position);
+                    obj.quaternion.copy(quaternion);
+                    obj.scale.copy(scale);
+                    obj.updateMatrix();
+                }
+            }
+        }
+
         // --- PHYSICS ENGINE LOGIC ---
 
         enablePhysics({ ENABLE }) {
@@ -338,29 +479,42 @@
             }
         }
 
-        setGravity({ VAL }) {
+        setGravity({ X, Y, Z }) {
             if (world && physicsEnabled) {
-                world.gravity.set(0, Number(VAL), 0);
+                world.gravity.set(Number(X), Number(Y), Number(Z));
             }
         }
 
-        addBody({ ID, SHAPE, STATIC, MASS, MESH_ID }) {
+        changeGravity({ X, Y, Z }) {
+            if (world && physicsEnabled) {
+                world.gravity.x += Number(X);
+                world.gravity.y += Number(Y);
+                world.gravity.z += Number(Z);
+            }
+        }
+
+        getGravity() {
+            if (world && physicsEnabled) {
+                const g = world.gravity;
+                return `${g.x},${g.y},${g.z}`;
+            }
+            return "0,0,0";
+        }
+
+        addBody({ ID, STATIC, MASS, MESH_ID }) {
             if (!world || !physicsEnabled) return;
             
-            // 1. Determine Mass (Static overrides mass input)
             let mass = Number(MASS);
             if (STATIC) {
-                mass = 0; // Static objects have 0 mass
+                mass = 0; 
             }
 
-            // 2. Find the Mesh to bind to
             const mesh = objects[MESH_ID];
             if (!mesh) {
                 console.warn(`Three.pm: Cannot bind physics body [${ID}] to missing mesh [${MESH_ID}]`);
                 return;
             }
 
-            // 3. Auto-Generate Collision from the specific Mesh
             mesh.updateMatrixWorld();
             
             const box = new THREE.Box3().setFromObject(mesh);
@@ -369,44 +523,20 @@
             const center = new THREE.Vector3();
             box.getCenter(center);
 
-            let shape;
+            // AUTO GENERATE: Always use Box for collision stability and accuracy based on mesh size
             const halfExtents = new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2);
+            const shape = new CANNON.Box(halfExtents);
 
-            switch (SHAPE) {
-                case 'Box':
-                    shape = new CANNON.Box(halfExtents);
-                    break;
-                case 'Sphere':
-                    const radius = Math.max(size.x, size.y, size.z) / 2;
-                    shape = new CANNON.Sphere(radius);
-                    break;
-                case 'Plane':
-                    shape = new CANNON.Plane();
-                    break;
-                default:
-                    shape = new CANNON.Box(halfExtents);
-            }
-
-            const body = new CANNON.Body({
-                mass: mass 
-            });
-            
+            const body = new CANNON.Body({ mass: mass });
             body.addShape(shape);
 
-            // 4. Set Initial Position based on the Mesh
-            if (SHAPE === 'Plane') {
-                body.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
-                body.position.set(center.x, center.y, center.z);
-            } else {
-                body.position.set(center.x, center.y, center.z);
-                if (mass > 0) {
-                    body.quaternion.set(mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w);
-                }
+            body.position.set(center.x, center.y, center.z);
+            
+            if (mass > 0) {
+                body.quaternion.set(mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w);
             }
 
             world.addBody(body);
-            
-            // 5. Create the Binding
             physicsBodies[ID] = body;
             physicsMeshMap[ID] = mesh;
         }
@@ -423,15 +553,18 @@
 
         clearScene() {
             if (!scene) return;
-            // Also clear physics to prevent ghost collisions
             if (world) {
                 for (const id in physicsBodies) {
                     world.removeBody(physicsBodies[id]);
                 }
-                // Reset maps
                 for (const prop in physicsBodies) delete physicsBodies[prop];
                 for (const prop in physicsMeshMap) delete physicsMeshMap[prop];
             }
+
+            // Clear flares
+            lightFlares.length = 0;
+            // Clear camera attachments
+            cameraAttachments.length = 0;
 
             while(scene.children.length > 0){ 
                 scene.remove(scene.children[0]); 
@@ -442,7 +575,6 @@
             if (!scene) return;
             const loader = new THREE.TextureLoader();
             loader.setCrossOrigin('anonymous'); 
-            
             loader.load(URL, (texture) => {
                 texture.mapping = THREE.EquirectangularReflectionMapping;
                 scene.background = texture;
@@ -483,12 +615,18 @@
                 const textureFlare3 = textureLoader.load('https://threejs.org/examples/textures/lensflare/lensflare3.png');
 
                 const lensflare = new THREE.Lensflare();
+                lensflare.frustumCulled = false; 
+                lensflare.renderOrder = 999;     
+                
                 lensflare.addElement(new THREE.LensflareElement(textureFlare0, 700, 0, light.color));
                 lensflare.addElement(new THREE.LensflareElement(textureFlare3, 60, 0.6));
                 lensflare.addElement(new THREE.LensflareElement(textureFlare3, 70, 0.7));
                 lensflare.addElement(new THREE.LensflareElement(textureFlare3, 120, 0.9));
                 lensflare.addElement(new THREE.LensflareElement(textureFlare3, 70, 1));
-                light.add(lensflare);
+
+                scene.add(lensflare);
+                
+                lightFlares.push({ light: light, flare: lensflare });
             }
 
             objects[ID] = light;
@@ -604,7 +742,15 @@
         }
 
         removeFromScene({ ID }) {
-            if (scene && objects[ID]) scene.remove(objects[ID]);
+            if (scene && objects[ID]) {
+                scene.remove(objects[ID]);
+                // Remove associated flare
+                const flareIndex = lightFlares.findIndex(e => e.light === objects[ID]);
+                if (flareIndex !== -1) {
+                    scene.remove(lightFlares[flareIndex].flare);
+                    lightFlares.splice(flareIndex, 1);
+                }
+            }
         }
 
         // --- CAMERA CONTROLS ---
@@ -648,16 +794,37 @@
         render() {
             // AUTO-UPDATE PHYSICS LOGIC
             if (physicsEnabled && world) {
-                // Step the simulation
                 world.step(1 / 60);
 
-                // Bind: Sync all physics bodies to their linked visual meshes
                 for (const [id, body] of Object.entries(physicsBodies)) {
-                    const mesh = physicsMeshMap[id]; // Look up the specific mesh linked to this body
+                    const mesh = physicsMeshMap[id]; 
                     if (mesh) {
                         mesh.position.copy(body.position);
                         mesh.quaternion.copy(body.quaternion);
                     }
+                }
+            }
+
+            // SYNC FLARES
+            for (const entry of lightFlares) {
+                if (entry.light && entry.flare) {
+                    entry.flare.position.copy(entry.light.position);
+                    entry.flare.quaternion.copy(entry.light.quaternion);
+                    entry.flare.updateMatrix();
+                }
+            }
+
+            // SYNC CAMERA ATTACHMENTS (The Fix)
+            if (camera && cameraAttachments.length > 0) {
+                for (const item of cameraAttachments) {
+                    // 1. Match camera rotation
+                    item.child.quaternion.copy(camera.quaternion);
+                    
+                    // 2. Copy camera position
+                    item.child.position.copy(camera.position);
+
+                    // 3. Move forward by distance relative to the new rotation
+                    item.child.translateZ(item.dist); 
                 }
             }
 
